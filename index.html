@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Yaren İçin Gerçekçi Düşen Ekmek Oyunu 🍞✨</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap');
+
+  * {
+    margin:0; padding:0; box-sizing: border-box;
+    user-select:none;
+  }
+  html, body {
+    height:100%;
+    overflow:hidden;
+    background: linear-gradient(135deg, #fce4ec, #c2185b);
+    font-family: 'Poppins', sans-serif;
+    color: #fff;
+  }
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at top left, #ff79a6aa, transparent 60%),
+      radial-gradient(circle at bottom right, #ff4081aa, transparent 70%),
+      linear-gradient(135deg, #fce4ec, #c2185b);
+  }
+
+  #basket {
+    position: absolute;
+    bottom: 20px;
+    width: 140px;
+    height: 70px;
+    background: linear-gradient(145deg, #880e4f, #ad1457);
+    border-radius: 60px 60px 15px 15px;
+    box-shadow:
+      0 6px 15px #ad1457cc,
+      inset 0 5px 15px #880e4f;
+    left: calc(50% - 70px);
+    transition: left 0.15s cubic-bezier(.4,0,.2,1);
+  }
+  #basket::after {
+    content: '';
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90px;
+    height: 40px;
+    background: radial-gradient(circle at center, #ff80ab, #880e4f);
+    border-radius: 50% 50% 0 0;
+    box-shadow: 0 2px 8px #880e4fbb inset;
+  }
+
+  .bread {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    background: url('ekmek.png') no-repeat center/contain;
+    filter: drop-shadow(0 2px 1px rgba(0,0,0,0.3));
+    will-change: transform;
+    animation: dropFade 1s ease forwards;
+  }
+  @keyframes dropFade {
+    0% {opacity: 0; transform: translateY(-60px) scale(0.8);}
+    100% {opacity: 1; transform: translateY(0) scale(1);}
+  }
+
+  #score, #missed {
+    position: fixed;
+    top: 25px;
+    font-weight: 700;
+    font-size: 1.8rem;
+    padding: 10px 20px;
+    border-radius: 25px;
+    background: #ad1457cc;
+    box-shadow: 0 0 12px #ff4081cc;
+    user-select:none;
+  }
+  #score {
+    left: 20px;
+  }
+  #missed {
+    right: 20px;
+  }
+
+  #gameOver {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #880e4fdd;
+    color: white;
+    padding: 40px 60px;
+    border-radius: 25px;
+    font-size: 2.3rem;
+    text-align: center;
+    display: none;
+    z-index: 30;
+    box-shadow: 0 0 40px 15px #ad1457cc;
+  }
+  #gameOver button {
+    margin-top: 25px;
+    padding: 14px 40px;
+    font-size: 1.5rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    background: #ff4081;
+    color: white;
+    box-shadow: 0 6px 15px #880e4fbb;
+    transition: background 0.3s ease;
+  }
+  #gameOver button:hover {
+    background: #c2185b;
+  }
+
+</style>
+</head>
+<body>
+
+<div id="game" aria-label="Yaren için gerçekçi düşen ekmek oyunu">
+  <div id="basket" aria-label="Sepet"></div>
+  <div id="score" aria-live="polite" aria-atomic="true">Puan: 0</div>
+  <div id="missed" aria-live="polite" aria-atomic="true">Kaçırılan: 0 / 5</div>
+  <div id="gameOver" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle" tabindex="-1">
+    <div id="gameOverTitle">Oyun Bitti 😢</div>
+    <p>Yaren, bu oyunu senin için hazırladım! ❤️</p>
+    <button id="restartBtn" aria-label="Oyunu yeniden başlat">Tekrar Oyna</button>
+  </div>
+</div>
+
+<script>
+  const game = document.getElementById('game');
+  const basket = document.getElementById('basket');
+  const scoreEl = document.getElementById('score');
+  const missedEl = document.getElementById('missed');
+  const gameOverEl = document.getElementById('gameOver');
+  const restartBtn = document.getElementById('restartBtn');
+
+  let gameWidth = window.innerWidth;
+  let gameHeight = window.innerHeight;
+
+  let basketX = gameWidth / 2 - 70; // basket width: 140
+  let score = 0;
+  let missed = 0;
+  const maxMissed = 5;
+  let breads = [];
+  let gameInterval;
+  let breadFallSpeed = 2.5;
+  let isGameOver = false;
+
+  // Ses efektleri
+  const catchSound = new Audio('https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg');
+  const gameOverSound = new Audio('https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg');
+
+  function createBread() {
+    if(isGameOver) return;
+
+    const bread = document.createElement('div');
+    bread.classList.add('bread');
+    bread.style.left = Math.random() * (gameWidth - 50) + 'px';
+    bread.style.top = '-60px';
+    game.appendChild(bread);
+
+    breads.push({el: bread, y: -60, x: parseFloat(bread.style.left), caught: false});
+  }
+
+  function moveBreads() {
+    breads.forEach((bread, index) => {
+      bread.y += breadFallSpeed;
+      bread.el.style.top = bread.y + 'px';
+
+      // Yakalanma kontrolü
+      if(!bread.caught &&
+        bread.y + 50 >= gameHeight - 90 &&
+        bread.x + 50 > basketX &&
+        bread.x < basketX + 140
+      ) {
+        bread.caught = true;
+        score++;
+        scoreEl.textContent = `Puan: ${score}`;
+        catchSound.currentTime = 0;
+        catchSound.play();
+
+        // Yakalanınca animasyon
+        bread.el.style.transition = 'transform 0.4s ease';
+        bread.el.style.transform = 'translateY(-40px) scale(1.3)';
+        setTimeout(() => {
+          bread.el.remove();
+          breads.splice(index, 1);
+        }, 400);
+
+        if(score % 5 === 0 && breadFallSpeed < 10) breadFallSpeed += 0.4;
+      }
+      else if(bread.y > gameHeight && !bread.caught) {
+        bread.el.remove();
+        breads.splice(index, 1);
+        missed++;
+        missedEl.textContent = `Kaçırılan: ${missed} / ${maxMissed}`;
+        if(missed >= maxMissed) endGame();
+      }
+    });
+  }
+
+  function endGame() {
+    isGameOver = true;
+    clearInterval(gameInterval);
+    gameOverSound.play();
+    gameOverEl.style.display = 'block';
+    gameOverEl.focus();
+  }
+
+  function restartGame() {
+    breads.forEach(b => b.el.remove());
+    breads = [];
+    score = 0;
+    missed = 0;
+    breadFallSpeed = 2.5;
+    isGameOver = false;
+    scoreEl.textContent = `Puan: ${score}`;
+    missedEl.textContent = `Kaçırılan: ${missed} / ${maxMissed}`;
+    gameOverEl.style.display = 'none';
+
+    gameInterval = setInterval(createBread, 700);
+    requestAnimationFrame(gameLoop);
+  }
+
+  function gameLoop() {
+    if(isGameOver) return;
+    moveBreads();
+    requestAnimationFrame(gameLoop);
+  }
+
+  function moveBasket(x) {
+    basketX = x - 70; // ortala sepete göre
+    if(basketX < 0) basketX = 0;
+    if(basketX > gameWidth - 140) basketX = gameWidth - 140;
+    basket.style.left = basketX + 'px';
+  }
+
+  window.addEventListener('touchmove', e => {
+    if(e.touches.length > 0 && !isGameOver) {
+      moveBasket(e.touches[0].clientX);
+    }
+  });
+
+  window.addEventListener('mousemove', e => {
+    if(!isGameOver) {
+      moveBasket(e.clientX);
+    }
+  });
+
+  window.addEventListener('keydown', e => {
+    if(isGameOver) return;
+    if(e.key === 'ArrowLeft') {
+      moveBasket(basketX + 70 - 40);
+    } else if(e.key === 'ArrowRight') {
+      moveBasket(basketX + 70 + 40);
+    }
+  });
+
+  restartBtn.addEventListener('click', () => {
+    restartGame();
+  });
+
+  window.addEventListener('resize', () => {
+    gameWidth = window.innerWidth;
+    gameHeight = window.innerHeight;
+  });
+
+  // Başlat
+  restartGame();
+</script>
+
+</body>
+</html>
